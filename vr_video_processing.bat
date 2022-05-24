@@ -56,8 +56,8 @@ set url_avisynth=https://github.com/AviSynth/AviSynthPlus/releases/download/v3.7
 set ffmpeg_prepend=-y -loglevel quiet -stats
 set ffmpeg_decoder_opts=-c:v h264_cuvid
 set ffmpeg_encoder_opts=-c:v h264_nvenc
-set nvidia_decoder=1
-set nvidia_encoder=1
+
+
 
 
 
@@ -66,10 +66,10 @@ set AVISYNTH_FOLDER=none
 FOR /F "tokens=2* delims= " %%a IN ('REG QUERY "HKEY_LOCAL_MACHINE\SOFTWARE\AviSynth" /v plugindir2_5 2^>NUL') do set AVISYNTH_FOLDER=%%b
 
 
-call :test_thing "FFMPEG.exe available" "bin\ffmpeg -version" " * ffmpeg.exe seems to be missing, download the zip at %url_ffmpeg% and copy the file bin\ffmpeg.exe to the bin folder of this script. %cd%"
+call :test_thing "FFMPEG.exe available" "bin\ffmpeg -version" " * bin\ffmpeg.exe seems to be missing, download the zip at %url_ffmpeg% and copy the file bin\ffmpeg.exe to the bin folder of this script. %cd%"
 if !error_test_thing!==1 call :fatal_error_pause
 
-call :test_thing "FFPROBE.exe available" "bin\ffprobe -version" " * ffprobe.exe seems to be missing, download the zip at %url_ffmpeg% and copy the file bin\ffprobe.exe to the bin folder of this script. %cd%"
+call :test_thing "FFPROBE.exe available" "bin\ffprobe -version" " * bin\ffprobe.exe seems to be missing, download the zip at %url_ffmpeg% and copy the file bin\ffprobe.exe to the bin folder of this script. %cd%"
 if !error_test_thing!==1 call :fatal_error_pause
 
 
@@ -100,29 +100,30 @@ if !error_test_thing!==1 (
 )
 
 call :gen_avisynth_test
-call :test_thing "FFMPEG supports Avisynth scripts" "bin\ffmpeg -y -i %avs_temp% -t 0.1 -f null -" " * You seem to be missing Avisynth, download it at !url_avisynth! or your FFMPEG current executable was compiled without avisynth support."
+call :test_thing "FFMPEG supports Avisynth scripts" "bin\ffmpeg -y -i %avs_temp% -t 0.1 -f null -" " * Avisynth is not working with ffmpeg, download it at !url_avisynth! or your FFMPEG current executable was compiled without avisynth support."
 if !error_test_thing!==1 call :fatal_error_pause
+
+
 
 call :gen_avisynth_plugin_test
 call :test_thing "Avisynth required plugins" "bin\ffmpeg -y -i %avs_temp% -t 0.1 -f null -" " * You might be missing the ffms2.dll and/or mvtools2.dll plugins in the avisynth_plugins folder."
-
 if !error_test_thing!==1 (
-echo check the folder: !AVISYNTH_FOLDER! for those files.
-echo 
 call :fatal_error_pause
 )
 
-call :test_thing "FFMPEG can use Nvidia h264 encoding" "bin\ffmpeg -y -i %avs_temp% -c:v h264_nvenc -t 0.1 ^"!mkv_temp!^"" "Not required. This is only available on geforce GPUs and can speedup the process."
+call :test_thing "FFMPEG can use Nvidia h264 encoding" "bin\ffmpeg -y -i %avs_temp% -c:v h264_nvenc -t 2.0 ^"!mkv_temp!^"" "Not required. This is only available on geforce GPUs and can speedup the process."
 if !error_test_thing!==1 (
-set ffmpeg_encoder_opts=-c:v libx264
-set nvidia_encoder=0
+set ffmpeg_encoder_opts=
+set ffmpeg_decoder_opts=
 )
 
-call :test_thing "FFMPEG can use Nvidia h264 decoding" "bin\ffmpeg -y -c:v h264_cuvid -i ^"!mkv_temp!^" -c:v h264_nvenc -t 0.1 -f null -" "Not required. This is only available on geforce GPUs and can speed up the process."
-if !error_test_thing!==1 (
-set ffmpeg_decoder_opts=
-set nvidia_decoder=0
-)
+
+rem call :test_thing "FFMPEG can use Nvidia h264 decoding" "bin\ffmpeg -y -c:v h264_cuvid -i ^"!mkv_temp!^" -c:v h264_nvenc -f null -" "Not required. This is only available on geforce GPUs and can speed up the process."
+rem if !error_test_thing!==1 (
+rem set ffmpeg_decoder_opts=
+rem set nvidia_decoder=0
+rem )
+
 
 
 
@@ -149,7 +150,7 @@ if NOT "%~1"=="" (
 
 
 
-rem check 
+rem check the source file
 for /f "tokens=1* delims==" %%a in ('bin\ffprobe -v quiet -i !input_motion! -print_format ini -show_streams ^2^>^&1') do (
 	rem echo %%a -- %%b
 	if "%%a"=="r_frame_rate" for /f "tokens=1 delims=/" %%f in ("%%b") do set ffprobe_r_frame_rate=%%f
@@ -175,10 +176,9 @@ for /f "tokens=1* delims==" %%a in ('bin\ffprobe -v quiet -i !input_motion! -pri
 			rem warn if the input video stream format suck
 			if NOT "!ffprobe_codec_name!"=="h264" (
 				echo %sRED%Warning: %cYELLOW%the input video stream is not h264, decoding the input might be slower and wont use nvidia hardware acceleration.%cDEFAULT%
-				set ffmpeg_decoder_opts=
+				set ffmpeg_decoder_opts=				
 				set nvidia_decoder=0				
-			)
-			
+			)		
 		)
 	)
 )
@@ -293,12 +293,12 @@ set motion_file_temp=motion_data_%random%%random%.tmp
 
 echo.
 echo * %cGREEN%^(1/3^) %cCYAN%Processing the motion detection for the deshake filter...%cDEFAULT%
-bin\ffmpeg %ffmpeg_prepend% %ffmpeg_decoder_opts% !ts_start_secs! -i %input_motion% !duration_user! -vf "!mp_decimate_filter!vidstabdetect=shakiness=!shakiness_camera_factor!:accuracy=15:stepsize=6:mincontrast=0.3:result=!transforms_temp!" -f null -
+bin\ffmpeg %ffmpeg_prepend% !ffmpeg_decoder_opts! !ts_start_secs! -i %input_motion% !duration_user! -vf "!mp_decimate_filter!vidstabdetect=shakiness=!shakiness_camera_factor!:accuracy=15:stepsize=6:mincontrast=0.3:result=!transforms_temp!" -f null -
 if ERRORLEVEL 1 echo fatal ffmpeg error! && call :fatal_error_pause
 
 echo.
 echo * %cGREEN%^(2/3^) %cCYAN%Rendering the deshaken intermediary file...%cDEFAULT% !mkv_temp!
-bin\ffmpeg %ffmpeg_prepend% %ffmpeg_decoder_opts% !ts_start_secs! -i %input_motion% !duration_user! -vf "!mp_decimate_filter!vidstabtransform=smoothing=!smooth_camera_factor!:interpol=linear:crop=black:zoom=!zoom!:input=!transforms_temp!,unsharp=5:5:0.8:3:3:0.4,format=yuv420p" !ffmpeg_encoder_opts! -preset fast -rc:v vbr_minqp -qmin:v 1 -qmax:v 18 !mkv_temp!
+bin\ffmpeg !ffmpeg_prepend! %ffmpeg_decoder_opts% !ts_start_secs! -i %input_motion% !duration_user! -vf "!mp_decimate_filter!vidstabtransform=smoothing=!smooth_camera_factor!:interpol=linear:crop=black:zoom=!zoom!:input=!transforms_temp!,unsharp=5:5:0.8:3:3:0.4,format=yuv420p" !ffmpeg_encoder_opts! -preset fast -rc:v vbr_minqp -qmin:v 1 -qmax:v 18 !mkv_temp!
 if ERRORLEVEL 1 echo fatal ffmpeg error! && call :fatal_error_pause
 
 rem generate the avisynth script that does the motion interpolation
@@ -306,7 +306,7 @@ call :gen_avisynth_script
 
 echo.
 echo * %cGREEN%^(3/3^) %cCYAN%Rendering the final file with motion interpolation... ^(This step is VERY slow!^) %cDEFAULT%
-bin\ffmpeg %ffmpeg_prepend% -i "%avs_temp%" -i !mkv_temp! -map 0:v:0 -map 1:a:0 -c:a copy !ffmpeg_encoder_opts! -rc:v vbr_minqp -qmin:v 1 -qmax:v 28 "%output_motion%"
+bin\ffmpeg !ffmpeg_prepend! -i "%avs_temp%" -i !mkv_temp! -map 0:v:0 -map 1:a:0 -c:a copy !ffmpeg_encoder_opts! -rc:v vbr_minqp -qmin:v 1 -qmax:v 28 "%output_motion%"
 if ERRORLEVEL 1 echo fatal ffmpeg error! call :fatal_error_pause
 
 
@@ -316,11 +316,11 @@ del "%avs_temp%" >NUL 2>NUL
 del "%mkv_temp%" >NUL 2>NUL
 
 echo.
-echo %cGREEN%all done! %cYELLOW% %output_motion%
+echo %cGREEN%all done! %cYELLOW%%output_motion%
 
 
 ::aguardar 3 segundos
-timeout 3 /nobreak >NUL 2>NUL
+timeout 5 /nobreak >NUL 2>NUL
 goto :eof
 
 
