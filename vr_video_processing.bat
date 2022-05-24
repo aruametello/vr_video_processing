@@ -118,6 +118,8 @@ set ffmpeg_decoder_opts=
 )
 
 
+
+
 rem call :test_thing "FFMPEG can use Nvidia h264 decoding" "bin\ffmpeg -y -c:v h264_cuvid -i ^"!mkv_temp!^" -c:v h264_nvenc -f null -" "Not required. This is only available on geforce GPUs and can speed up the process."
 rem if !error_test_thing!==1 (
 rem set ffmpeg_decoder_opts=
@@ -130,8 +132,6 @@ rem )
 
 
 
-rem temporary file for the deshaken but still not interpolated motion
-set mkv_temp=%cd%\pre_interp_deshaken_video_%random%.mkv
 
 
 
@@ -149,8 +149,16 @@ if NOT "%~1"=="" (
 
 
 
+rem temporary file for the deshaken but still not interpolated motion
+set mkv_temp=%cd%\pre_interp_deshaken_video_%random%.mkv
+
+
 
 rem check the source file
+
+set input_has_audio=0
+set input_has_video=0
+set final_input_mapping=-i "!avs_temp!"
 for /f "tokens=1* delims==" %%a in ('bin\ffprobe -v quiet -i !input_motion! -print_format ini -show_streams ^2^>^&1') do (
 	rem echo %%a -- %%b
 	if "%%a"=="r_frame_rate" for /f "tokens=1 delims=/" %%f in ("%%b") do set ffprobe_r_frame_rate=%%f
@@ -163,7 +171,14 @@ for /f "tokens=1* delims==" %%a in ('bin\ffprobe -v quiet -i !input_motion! -pri
 
 	if "%%a"=="duration" (
 		set ffprobe_duration=%%b
+		
+		if "!ffprobe_codec_type!"=="audio" (
+			set input_has_audio=1
+			rem put the original untouched audio into the final file.
+		)
+		
 		if "!ffprobe_codec_type!"=="video" (
+			set input_has_video=1
 			echo %cCYAN%Input video format: %sYELLOW%!ffprobe_codec_name! !ffprobe_width!x!ffprobe_height!@!ffprobe_r_frame_rate!fps%cDEFAULT%
 			
 			rem warn if the captured framerate suck
@@ -182,6 +197,13 @@ for /f "tokens=1* delims==" %%a in ('bin\ffprobe -v quiet -i !input_motion! -pri
 		)
 	)
 )
+
+
+rem warn the user if the file is weird
+if "!input_has_video!"=="0" echo %cRED%ERROR! input file has no video stream!%cDEFAULT% && call :fatal_error_pause
+if "!input_has_audio!"=="0" echo %cRED%NOTICE: input file has no audio stream.%cDEFAULT%
+
+
 
 
 rem read some filename for the output
@@ -291,6 +313,11 @@ if "%ERRORLEVEL%"=="1" set mp_decimate_filter=mpdecimate=hi=3036:lo=640:frac=1.0
 
 set motion_file_temp=motion_data_%random%%random%.tmp
 
+
+if "!input_has_audio!"=="1" set final_input_mapping=-i "!avs_temp!" -i !mkv_temp! -map 0:v:0 -map 1:a:0 -c:a copy
+
+
+
 echo.
 echo * %cGREEN%^(1/3^) %cCYAN%Processing the motion detection for the deshake filter...%cDEFAULT%
 bin\ffmpeg %ffmpeg_prepend% !ffmpeg_decoder_opts! !ts_start_secs! -i %input_motion% !duration_user! -vf "!mp_decimate_filter!vidstabdetect=shakiness=!shakiness_camera_factor!:accuracy=15:stepsize=6:mincontrast=0.3:result=!transforms_temp!" -f null -
@@ -306,14 +333,14 @@ call :gen_avisynth_script
 
 echo.
 echo * %cGREEN%^(3/3^) %cCYAN%Rendering the final file with motion interpolation... ^(This step is VERY slow!^) %cDEFAULT%
-bin\ffmpeg !ffmpeg_prepend! -i "%avs_temp%" -i !mkv_temp! -map 0:v:0 -map 1:a:0 -c:a copy !ffmpeg_encoder_opts! -rc:v vbr_minqp -qmin:v 1 -qmax:v 28 "%output_motion%"
+rem echo bin\ffmpeg  !final_input_mapping! !ffmpeg_encoder_opts! -rc:v vbr_minqp -qmin:v 1 -qmax:v 28 "%output_motion%"
+bin\ffmpeg %ffmpeg_prepend% !final_input_mapping! !ffmpeg_encoder_opts! -rc:v vbr_minqp -qmin:v 1 -qmax:v 28 "%output_motion%"
 if ERRORLEVEL 1 echo fatal ffmpeg error! call :fatal_error_pause
 
 
 rem cleanup, delete temporary files
 del !transforms_temp! >NUL 2>NUL
 del "%avs_temp%" >NUL 2>NUL
-del "%mkv_temp%" >NUL 2>NUL
 
 echo.
 echo %cGREEN%all done! %cYELLOW%%output_motion%
