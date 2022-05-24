@@ -2,8 +2,6 @@
 setlocal ENABLEDELAYEDEXPANSION
 cd /D "%~dp0"
 
-
-
 rem if you are looking to tweak extra stuff, maybe those are the settings you are looking for
 set zoom=20
 set smooth_camera_factor=15
@@ -33,6 +31,11 @@ set sCYAN=[96m
 set sWHITE=[97m
 
 
+:start_over
+Title ### vr video motion smoother thingy ###
+cls
+echo %cCYAN%checking dependencies... 
+
 
 
 
@@ -42,8 +45,8 @@ echo %cDEFAULT%
 
 
 set transforms_temp=motion_data_%random%.trf
-set mkv_temp=%temp%\%random%%random%%random%%random%.mkv
-set avs_temp=%temp%\%random%%random%%random%%random%.avs
+set mkv_temp=%temp%\vr_video_processing_temp_%random%%random%%random%%random%.mkv
+set avs_temp=%temp%\avisynth_%random%%random%%random%%random%.avs
 
 
 set url_ffmpeg=https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-full.7z
@@ -57,28 +60,65 @@ set nvidia_decoder=1
 set nvidia_encoder=1
 
 
-Title ### vr video motion smoother thingy ###
-echo %cCYAN%checking dependencies... 
+
+rem queriyng from the registry where avisynth is installed
+set AVISYNTH_FOLDER=none
+FOR /F "tokens=2* delims= " %%a IN ('REG QUERY "HKEY_LOCAL_MACHINE\SOFTWARE\AviSynth" /v plugindir2_5 2^>NUL') do set AVISYNTH_FOLDER=%%b
 
 
-
-call :test_thing "FFMPEG.exe available" "ffmpeg -version" "ffmpeg.exe seems to be missing, download the zip at %url_ffmpeg% and copy the file bin\ffmpeg.exe to the same folder as this script. %cd%"
+call :test_thing "FFMPEG.exe available" "bin\ffmpeg -version" " * ffmpeg.exe seems to be missing, download the zip at %url_ffmpeg% and copy the file bin\ffmpeg.exe to the bin folder of this script. %cd%"
 if !error_test_thing!==1 call :fatal_error_pause
 
-call :test_thing "FFPROBE.exe available" "ffprobe -version" "ffprobe.exe seems to be missing, download the zip at %url_ffmpeg% and copy the file bin\ffprobe.exe to the same folder as this script. %cd%"
+call :test_thing "FFPROBE.exe available" "bin\ffprobe -version" " * ffprobe.exe seems to be missing, download the zip at %url_ffmpeg% and copy the file bin\ffprobe.exe to the bin folder of this script. %cd%"
 if !error_test_thing!==1 call :fatal_error_pause
+
+
+call :test_thing "Avisynth+ is installed" "REG QUERY "HKEY_LOCAL_MACHINE\SOFTWARE\AviSynth" /v plugindir2_5" " * You seem to be missing Avisynth+!"
+if !error_test_thing!==1 (
+	if "%AVISYNTH_FOLDER%"=="none" (
+		echo. 
+		echo avisynth+ is required and does not seem to be installed yet.
+		echo.
+		echo i can install it for you from the file avisynth_installer\AviSynthPlus_3.7.0_20210111.exe
+		echo.
+		choice /C YN /M "Proceed with the install?"
+		if "%ERRORLEVEL%"=="1" (
+		
+			if EXIST avisynth_installer\AviSynthPlus_3.7.0_20210111.exe (
+				start /wait avisynth_installer\AviSynthPlus_3.7.0_20210111.exe /silent
+				goto start_over
+			)else (
+				echo Missing avisynth_installer\AviSynthPlus_3.7.0_20210111.exe !
+				call :fatal_error_pause				
+			)
+		)else (
+			call :fatal_error_pause
+		)
+	)
+	rem wtf?
+	call :fatal_error_pause
+)
 
 call :gen_avisynth_test
-call :test_thing "FFMPEG supports Avisynth scripts" "ffmpeg -y -i %avs_temp% -t 0.1 -f null -" "You seem to be missing Avisynth, download it at %url_avisynth% or your FFMPEG current executable was compiled without avisynth support."
+call :test_thing "FFMPEG supports Avisynth scripts" "bin\ffmpeg -y -i %avs_temp% -t 0.1 -f null -" " * You seem to be missing Avisynth, download it at !url_avisynth! or your FFMPEG current executable was compiled without avisynth support."
 if !error_test_thing!==1 call :fatal_error_pause
 
-call :test_thing "FFMPEG can use Nvidia h264 encoding" "ffmpeg -y -i %avs_temp% -c:v h264_nvenc -t 0.1 ^"!mkv_temp!^"" "Not required but recomended. This is only available on geforce GPUs and can speedup the process."
+call :gen_avisynth_plugin_test
+call :test_thing "Avisynth required plugins" "bin\ffmpeg -y -i %avs_temp% -t 0.1 -f null -" " * You might be missing the ffms2.dll and/or mvtools2.dll plugins in the avisynth_plugins folder."
+
+if !error_test_thing!==1 (
+echo check the folder: !AVISYNTH_FOLDER! for those files.
+echo 
+call :fatal_error_pause
+)
+
+call :test_thing "FFMPEG can use Nvidia h264 encoding" "bin\ffmpeg -y -i %avs_temp% -c:v h264_nvenc -t 0.1 ^"!mkv_temp!^"" "Not required. This is only available on geforce GPUs and can speedup the process."
 if !error_test_thing!==1 (
 set ffmpeg_encoder_opts=-c:v libx264
 set nvidia_encoder=0
 )
 
-call :test_thing "FFMPEG can use Nvidia h264 decoding" "ffmpeg -y -c:v h264_cuvid -i ^"!mkv_temp!^" -c:v h264_nvenc -t 0.1 -f null -" "Not required but recomended. This is only available on geforce GPUs and can speed up the process."
+call :test_thing "FFMPEG can use Nvidia h264 decoding" "bin\ffmpeg -y -c:v h264_cuvid -i ^"!mkv_temp!^" -c:v h264_nvenc -t 0.1 -f null -" "Not required. This is only available on geforce GPUs and can speed up the process."
 if !error_test_thing!==1 (
 set ffmpeg_decoder_opts=
 set nvidia_decoder=0
@@ -86,14 +126,6 @@ set nvidia_decoder=0
 
 
 
-rem queryng from the registry where avisynth is installed
-set AVISYNTH_FOLDER=none
-FOR /F "tokens=2* delims= " %%a IN ('REG QUERY "HKEY_LOCAL_MACHINE\SOFTWARE\AviSynth" /v plugindir2_5') do set AVISYNTH_FOLDER=%%b
-
-if "%AVISYNTH_FOLDER%"=="none" (
-echo avisynth does not seem to be installed, could not find it in the registry.
-call :fatal_error_pause
-)
 
 
 
@@ -118,7 +150,7 @@ if NOT "%~1"=="" (
 
 
 rem check 
-for /f "tokens=1* delims==" %%a in ('ffprobe -v quiet -i !input_motion! -print_format ini -show_streams ^2^>^&1') do (
+for /f "tokens=1* delims==" %%a in ('bin\ffprobe -v quiet -i !input_motion! -print_format ini -show_streams ^2^>^&1') do (
 	rem echo %%a -- %%b
 	if "%%a"=="r_frame_rate" for /f "tokens=1 delims=/" %%f in ("%%b") do set ffprobe_r_frame_rate=%%f
 	if "%%a"=="codec_name" set ffprobe_codec_name=%%b
@@ -251,6 +283,7 @@ echo Dropping duplicate frames can improve motion smoothness if your gameplay vi
 echo but often causes a video desync if too many frames are dropped in an uneven rate.
 echo.
 
+set mp_decimate_filter=
 choice /C YN /M "Drop duplicate frames?"
 if "%ERRORLEVEL%"=="1" set mp_decimate_filter=mpdecimate=hi=3036:lo=640:frac=1.0,
 
@@ -260,20 +293,20 @@ set motion_file_temp=motion_data_%random%%random%.tmp
 
 echo.
 echo * %cGREEN%^(1/3^) %cCYAN%Processing the motion detection for the deshake filter...%cDEFAULT%
-ffmpeg %ffmpeg_prepend% %ffmpeg_decoder_opts% !ts_start_secs! -i %input_motion% !duration_user! -vf "!mp_decimate_filter!vidstabdetect=shakiness=!shakiness_camera_factor!:accuracy=15:stepsize=6:mincontrast=0.3:result=!transforms_temp!" -f null -
+bin\ffmpeg %ffmpeg_prepend% %ffmpeg_decoder_opts% !ts_start_secs! -i %input_motion% !duration_user! -vf "!mp_decimate_filter!vidstabdetect=shakiness=!shakiness_camera_factor!:accuracy=15:stepsize=6:mincontrast=0.3:result=!transforms_temp!" -f null -
 if ERRORLEVEL 1 echo fatal ffmpeg error! && call :fatal_error_pause
 
 echo.
-echo * %cGREEN%^(2/3^) %cCYAN%Rendering the deshaken intermediary file...%cDEFAULT%
-ffmpeg %ffmpeg_prepend% %ffmpeg_decoder_opts% !ts_start_secs! -i %input_motion% !duration_user! -vf "!mp_decimate_filter!vidstabtransform=smoothing=!smooth_camera_factor!:interpol=linear:crop=black:zoom=!zoom!:input=!transforms_temp!,unsharp=5:5:0.8:3:3:0.4,format=yuv420p" !ffmpeg_encoder_opts! -preset fast -rc:v vbr_minqp -qmin:v 1 -qmax:v 18 !mkv_temp!
+echo * %cGREEN%^(2/3^) %cCYAN%Rendering the deshaken intermediary file...%cDEFAULT% !mkv_temp!
+bin\ffmpeg %ffmpeg_prepend% %ffmpeg_decoder_opts% !ts_start_secs! -i %input_motion% !duration_user! -vf "!mp_decimate_filter!vidstabtransform=smoothing=!smooth_camera_factor!:interpol=linear:crop=black:zoom=!zoom!:input=!transforms_temp!,unsharp=5:5:0.8:3:3:0.4,format=yuv420p" !ffmpeg_encoder_opts! -preset fast -rc:v vbr_minqp -qmin:v 1 -qmax:v 18 !mkv_temp!
 if ERRORLEVEL 1 echo fatal ffmpeg error! && call :fatal_error_pause
 
 rem generate the avisynth script that does the motion interpolation
 call :gen_avisynth_script
 
 echo.
-echo * %cGREEN%^(3/3^) %cCYAN%Rendering the final file with motion interpolation...^(This step is VERY slow!^) %cDEFAULT%
-ffmpeg %ffmpeg_prepend% -i "%avs_temp%" -i !mkv_temp! -map 0:v:0 -map 1:a:0 -c:a copy !ffmpeg_encoder_opts! -rc:v vbr_minqp -qmin:v 1 -qmax:v 28 "%output_motion%"
+echo * %cGREEN%^(3/3^) %cCYAN%Rendering the final file with motion interpolation... ^(This step is VERY slow!^) %cDEFAULT%
+bin\ffmpeg %ffmpeg_prepend% -i "%avs_temp%" -i !mkv_temp! -map 0:v:0 -map 1:a:0 -c:a copy !ffmpeg_encoder_opts! -rc:v vbr_minqp -qmin:v 1 -qmax:v 28 "%output_motion%"
 if ERRORLEVEL 1 echo fatal ffmpeg error! call :fatal_error_pause
 
 
@@ -311,9 +344,7 @@ echo %cDEFAULT%%~1 %cCOLUMN%%cYELLOW%[...]
 %~2 >NUL 2>NUL
 if ERRORLEVEL 1 (
 echo %cUP1LINE%%cDEFAULT%%~1 %cCOLUMN%%cRED%[FAIL]    
-echo.
 echo %cDEFAULT% %~3
-echo.
 set error_test_thing=1
 exit /B
 )else (
@@ -331,8 +362,8 @@ goto :eof
 :gen_avisynth_script
 
 rem echo loadplugin^(^"%ProgramFiles(x86)%\AviSynth+\plugins64\ffms2.dll^"^) >%avs_temp%
-echo loadplugin^(^"!AVISYNTH_FOLDER!\ffms2.dll^"^) >%avs_temp%
-echo loadplugin^(^"!AVISYNTH_FOLDER!\mvtools2.dll^"^)>>%avs_temp%
+echo loadplugin^(^"%cd%\avisynth_plugins\ffms2.dll^"^) >%avs_temp%
+echo loadplugin^(^"%cd%\avisynth_plugins\mvtools2.dll^"^)>>%avs_temp%
 echo SetFilterMTMode^(^"DEFAULT_MT_MODE^", 2^)>>%avs_temp%
 echo SetFilterMTMode^(^"FFVideoSource^", 3^)>>%avs_temp%
 rem echo A = FFAudioSource^(^"%input_motion%^"^)>>%avs_temp%
@@ -353,6 +384,14 @@ goto :eof
 ::================================================================
 :gen_avisynth_test
 echo Version^(^)>%avs_temp%
+goto :eof
+
+
+::================================================================
+:gen_avisynth_plugin_test
+echo loadplugin^(^"%cd%\avisynth_plugins\ffms2.dll^"^) >%avs_temp%
+echo loadplugin^(^"%cd%\avisynth_plugins\mvtools2.dll^"^)>>%avs_temp%
+echo Version^(^)>>%avs_temp%
 goto :eof
 
 
