@@ -1,15 +1,39 @@
 @echo off
 setlocal ENABLEDELAYEDEXPANSION
-cd /D "%~dp0"
 
-rem if you are looking to tweak extra stuff, maybe those are the settings you are looking for
+
+:: -------------------------------------
+:: if you are looking to tweak extra stuff, maybe those are the settings you are looking for
+
+:: lowballing the zoom will cause a black border to apear when the screen shakes
+:: bigger zoom = better avoidance of black borders
 set zoom=20
+
+:: smooth camera factor is somewhat how inertial the camera movement is
 set smooth_camera_factor=15
+
+:: shakiness is how much to refuse to follow a motion that seems to be shaking
 set shakiness_camera_factor=10
 
+::
+:: there are way more complex stuff in if you are interesting in dealing with the 
+:: avisynth scripting step, perhalps creating a less blurry "motion blur" ?
+::
+:: check the gen_avisynth_script function to see what is going on there
+::
+:: what this script does is to upsample whatever framerate input we have into 960fps
+:: and then merge the frames that are correctly aligned within each 16.7ms window of
+:: the 60fps output. 
+::
+:: it fixes the uneven motion in the displayed frames recorded above 60fps.
+::
+:: This can create great results with just 72hz gameplay (like i did), but the more
+:: frames the better, multiple of 60 are ideal (120hz?) but make sure you can run
+:: the game without dropping from the target framerate! dropped frames are bad.
 
 
-rem fancy colors because to make readability somewhat better.
+:: -------------------------------------
+rem fancy colors to make readability somewhat better.
 rem modified, original from here https://stackoverflow.com/questions/2048509/how-to-echo-with-different-colors-in-the-windows-command-line
 set cRED=[31m
 set cGREEN=[32m
@@ -32,12 +56,11 @@ set sWHITE=[97m
 
 
 :start_over
+cd /D "%~dp0"
+
 Title ### vr video motion smoother thingy ###
 cls
 echo %cCYAN%checking dependencies... 
-
-
-
 
 
 rem starting state of the terminal colors
@@ -302,7 +325,7 @@ rem ---------------------------------------------------
 
 echo.
 echo Dropping duplicate frames can improve motion smoothness if your gameplay video couldnt hit flawless performance,
-echo but often causes a video desync if too many frames are dropped in an uneven rate.
+echo but may cause a video desync if too many frames are dropped in an uneven rate.
 echo.
 
 set mp_decimate_filter=
@@ -314,7 +337,7 @@ if "%ERRORLEVEL%"=="1" set mp_decimate_filter=mpdecimate=hi=3036:lo=640:frac=1.0
 set motion_file_temp=motion_data_%random%%random%.tmp
 
 
-if "!input_has_audio!"=="1" set final_input_mapping=-i "!avs_temp!" -i !mkv_temp! -map 0:v:0 -map 1:a:0 -c:a copy
+if "!input_has_audio!"=="1" set final_input_mapping=-i "!avs_temp!" -i !mkv_temp! -map 0:v:0 -map 1:a:0
 
 
 
