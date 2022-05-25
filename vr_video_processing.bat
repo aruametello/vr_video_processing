@@ -1,7 +1,17 @@
 @echo off
 setlocal ENABLEDELAYEDEXPANSION
-
-
+::
+::  file: vr_video_processing.bat
+::
+::  Author: Aruã Metello - contact: aruametello@gmail.com
+::
+::  Descripton: 
+::  uses ffmpeg, avisynth, mvtools2 and ffms2 to deshake
+::  and downsample the framerate to a proper paced 60 frames per second
+::  
+::  it is intended to use with VR gameplay footage, but works with
+::  any videos you feed it.
+::
 :: -------------------------------------
 :: if you are looking to tweak extra stuff, maybe those are the settings you are looking for
 
@@ -136,7 +146,7 @@ call :fatal_error_pause
 
 call :test_thing "FFMPEG can use Nvidia h264 encoding" "bin\ffmpeg -y -i %avs_temp% -c:v h264_nvenc -t 2.0 ^"!mkv_temp!^"" "Not required. This is only available on geforce GPUs and can speedup the process."
 if !error_test_thing!==1 (
-set ffmpeg_encoder_opts=
+set ffmpeg_encoder_opts=-c:v libx264
 set ffmpeg_decoder_opts=
 )
 
