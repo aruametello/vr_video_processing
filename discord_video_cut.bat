@@ -43,12 +43,10 @@ rem starting state of the terminal colors
 echo %cDEFAULT%
 
 
-set transforms_temp=motion_data_%random%.trf
-set mkv_temp=%temp%\vr_video_processing_temp_%random%%random%%random%%random%.mkv
-set avs_temp=%temp%\avisynth_%random%%random%%random%%random%.avs
+rem create the local temporary folder if needed
+mkdir temporary_files >NUL 2>NUL
+set avs_temp="temporary_files\avisynth_%random%%random%%random%%random%.avs"
 
-
-set url_ffmpeg=https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-full.7z
 
 
 set ffmpeg_prepend=-y -loglevel quiet -stats
@@ -65,7 +63,7 @@ call :test_thing "FFPROBE.exe available" "bin\ffprobe -version" " * bin\ffprobe.
 if !error_test_thing!==1 call :fatal_error_pause
 
 
-call :test_thing "FFMPEG can use Nvidia h264 encoding" "bin\ffmpeg -y -f lavfi -i color=size=1280x720:rate=25:color=black -c:v h264_nvenc -t 2.0 ^"!mkv_temp!^"" "Not required. This is only available on geforce GPUs and can speedup the process."
+call :test_thing "FFMPEG can use Nvidia h264 encoding" "bin\ffmpeg -y -f lavfi -i color=size=1280x720:rate=25:color=black -c:v h264_nvenc -t 2.0 -f null -" "Not required. This is only available on geforce GPUs and can speedup the process."
 if !error_test_thing!==1 (
 set ffmpeg_encoder_opts=
 set ffmpeg_decoder_opts=
@@ -96,8 +94,6 @@ if NOT "%~1"=="" (
 
 
 
-rem temporary file for the deshaken but still not interpolated motion
-set mkv_temp=%cd%\pre_interp_deshaken_video_%random%.mkv
 
 
 
