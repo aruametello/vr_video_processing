@@ -230,11 +230,11 @@ for /f "tokens=1* delims==" %%a in ('bin\ffprobe -v quiet -i !input_motion! -pri
 			echo %cCYAN%Input video format: %sYELLOW%!ffprobe_codec_name! !ffprobe_width!x!ffprobe_height!@!ffprobe_r_frame_rate!fps%cDEFAULT%
 			
 			rem warn if the captured framerate suck
-			if /i "!ffprobe_r_frame_rate!" LEQ "60" echo %sRED%Warning:%cYELLOW% this video file does not seem to be a full framerate capture, OBS using "game capture" + match video fps to VR screen frequency is strongly recomended!. if not the result might suck.%cDEFAULT%
+			if /i !ffprobe_r_frame_rate! LEQ 60 echo %sRED%Warning:%cYELLOW% this video file does not seem to be a full framerate capture, OBS using "game capture" + match video fps to VR screen frequency is strongly recomended!. if not the result might suck.%cDEFAULT%
 			
 			rem warn if the video aspect ratio suck
 			set /a aspect_ratio_100= ^(!ffprobe_width! * 100^) / !ffprobe_height!
-			if /i "!aspect_ratio_100!" GTR "145" echo %sRED%Warning: %cYELLOW%the aspect ratio of the video seems too wide, the end result will likely be VERY zoomed in after deshaking!%cDEFAULT%
+			if /i !aspect_ratio_100! GTR 145 echo %sRED%Warning: %cYELLOW%the aspect ratio of the video seems too wide, the end result will likely be VERY zoomed in after deshaking!%cDEFAULT%
 						
 			rem warn if the input video stream format suck
 			if NOT "!ffprobe_codec_name!"=="h264" (
