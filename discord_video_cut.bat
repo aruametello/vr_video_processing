@@ -65,7 +65,7 @@ if !error_test_thing!==1 call :fatal_error_pause
 
 call :test_thing "FFMPEG can use Nvidia h264 encoding" "bin\ffmpeg -y -f lavfi -i color=size=1280x720:rate=25:color=black -c:v h264_nvenc -t 2.0 -f null -" "Not required. This is only available on geforce GPUs and can speedup the process."
 if !error_test_thing!==1 (
-set ffmpeg_encoder_opts=
+set ffmpeg_encoder_opts=-c:v libx264
 set ffmpeg_decoder_opts=
 )
 
@@ -310,7 +310,7 @@ if !video_kbit! LSS 600 (
   echo Sorry but !duration_user! seconds is too long to reasonably render in a !target_size_kb!kb file.
   echo try with a smaller duration, %cYELLOW%ideally with 60 seconds or less%cDEFAULT%.
   echo.
-  call :fatal_error_pause
+  goto :ask_time
 )
 
 
@@ -320,7 +320,7 @@ echo Attemping to encode the output with !video_kbit!k video bitrate, !audio_kbi
 
 
 rem echo ffmpeg %ffmpeg_prepend% !ffmpeg_decoder_opts! -ss !ts_start_secs_cmdline! -i !input_motion! -t !duration_user_cmdline! !ffmpeg_encoder_opts! -b:v !video_kbit!k -c:a libopus -b:a !audio_kbit!k %ffmpeg_video_filter% -preset slow "!output_motion!"
-ffmpeg %ffmpeg_prepend% !ffmpeg_decoder_opts! -ss !ts_start_secs! -i !input_motion! -t !duration_user! !ffmpeg_encoder_opts! -b:v !video_kbit!k -c:a libopus -b:a !audio_kbit!k -vf scale=!max_x_res!:-1 -preset slow "!output_motion!"
+bin\ffmpeg %ffmpeg_prepend% !ffmpeg_decoder_opts! -ss !ts_start_secs! -i !input_motion! -t !duration_user! !ffmpeg_encoder_opts! -b:v !video_kbit!k -c:a libopus -b:a !audio_kbit!k -vf scale=!max_x_res!:-1 -preset slow "!output_motion!"
 if ERRORLEVEL 1 echo fatal ffmpeg error! && call :fatal_error_pause
 
 
@@ -329,14 +329,14 @@ rem verificar o tamanho do arquivo de saida se tivemos sucesso ou falha
 for %%a in (!output_motion!) do set output_bytes=%%~za
 echo output size in bytes: !output_bytes!
 if !output_bytes! GTR !target_size_bytes! (
-echo File exceeded target size with bitrate !video_kbit!k, trying with a lower value
+echo File exceeded target size with bitrate !video_kbit!k, trying again with a lower value
 del !output_motion! >NUL 2>NUL
 echo.
 set /a video_kbit=!video_kbit! - 100
 goto try_again
 )else (
 echo.
-echo Success! !output_motion!
+echo %cGREEN%Success: %cDEFAULT%!output_motion!
 )
 
 

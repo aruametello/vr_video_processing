@@ -83,7 +83,7 @@ mkdir temporary_files >NUL 2>NUL
 
 
 rem transforms path cant have quotes?
-set transforms_temp=temporary_files\motion_data_%random%.trf
+set transforms_temp=motion_data_%random%.trf
 set mkv_temp="temporary_files\vr_video_processing_temp_%random%%random%%random%%random%.mkv"
 set avs_temp="temporary_files\avisynth_%random%%random%%random%%random%.avs"
 
@@ -158,7 +158,7 @@ set ffmpeg_decoder_opts=
  rem delete the temporary mkv
  del !mkv_temp! >NUL 2>NUL 
  
- rem delete the script 
+ rem delete the test script 
  del !avs_temp! >NUL 2>NUL
 
 )
@@ -198,7 +198,7 @@ if NOT "%~1"=="" (
 
 
 rem temporary file for the deshaken but still not interpolated motion
-set mkv_temp="%cd%\pre_interp_deshaken_video_%random%.mkv"
+set mkv_temp=%cd%\pre_interp_deshaken_video_%random%.mkv
 
 
 
@@ -362,7 +362,7 @@ if "%ERRORLEVEL%"=="1" set mp_decimate_filter=mpdecimate=hi=3036:lo=640:frac=1.0
 set motion_file_temp=motion_data_%random%%random%.tmp
 
 
-if "!input_has_audio!"=="1" set final_input_mapping=-i !avs_temp! -i !mkv_temp! -map 0:v:0 -map 1:a:0
+if "!input_has_audio!"=="1" set final_input_mapping=-i !avs_temp! -i "!mkv_temp!" -map 0:v:0 -map 1:a:0
 
 
 
@@ -372,12 +372,10 @@ bin\ffmpeg !ffmpeg_prepend! !ffmpeg_decoder_opts! !ts_start_secs! -i %input_moti
 if ERRORLEVEL 1 echo fatal ffmpeg error! && call :fatal_error_pause
 
 echo.
-echo * %cGREEN%^(2/3^) %cCYAN%Rendering the deshaken intermediary file...%cDEFAULT% !mkv_temp!
-bin\ffmpeg !ffmpeg_prepend! %ffmpeg_decoder_opts% !ts_start_secs! -i %input_motion% !duration_user! -vf "!mp_decimate_filter!vidstabtransform=smoothing=!smooth_camera_factor!:interpol=linear:crop=black:zoom=!zoom!:input=!transforms_temp!,unsharp=5:5:0.8:3:3:0.4,format=yuv420p" !ffmpeg_encoder_opts! -preset fast -rc:v vbr_minqp -qmin:v 1 -qmax:v 18 !mkv_temp!
+echo * %cGREEN%^(2/3^) %cCYAN%Rendering the deshaken intermediary file...%cDEFAULT% "!mkv_temp!"
+bin\ffmpeg !ffmpeg_prepend! %ffmpeg_decoder_opts% !ts_start_secs! -i %input_motion% !duration_user! -vf "!mp_decimate_filter!vidstabtransform=smoothing=!smooth_camera_factor!:interpol=linear:crop=black:zoom=!zoom!:input=!transforms_temp!,unsharp=5:5:0.8:3:3:0.4,format=yuv420p" !ffmpeg_encoder_opts! -preset fast -rc:v vbr_minqp -qmin:v 1 -qmax:v 18 "!mkv_temp!"
 if ERRORLEVEL 1 echo fatal ffmpeg error! && call :fatal_error_pause
 
-rem delete the ffindex file created with the mkv.
-del "!mkv_temp!.ffindex" >NUL 2>NUL 
 
 rem generate the avisynth script that does the motion interpolation
 call :gen_avisynth_script
@@ -385,13 +383,16 @@ call :gen_avisynth_script
 echo.
 echo * %cGREEN%^(3/3^) %cCYAN%Rendering the final file with motion interpolation... ^(This step is VERY slow!^) %cDEFAULT%
 bin\ffmpeg %ffmpeg_prepend% !final_input_mapping! !ffmpeg_encoder_opts! -rc:v vbr_minqp -qmin:v 1 -qmax:v 28 "%output_motion%"
-if ERRORLEVEL 1 echo fatal ffmpeg error! call :fatal_error_pause
+if ERRORLEVEL 1 echo fatal ffmpeg error! && call :fatal_error_pause
 
+
+rem delete the ffindex file created with the mkv.
+del "!mkv_temp!.ffindex" >NUL 2>NUL 
 
 rem cleanup, delete temporary files
 del "!transforms_temp!" >NUL 2>NUL
 del !avs_temp! >NUL 2>NUL
-del !mkv_temp! >NUL 2>NUL
+del "!mkv_temp!" >NUL 2>NUL
 
 echo.
 echo %cGREEN%all done! %cYELLOW%%output_motion%
@@ -445,7 +446,7 @@ echo loadplugin^(^"%cd%\avisynth_plugins\mvtools2.dll^"^)>>%avs_temp%
 echo SetFilterMTMode^(^"DEFAULT_MT_MODE^", 2^)>>%avs_temp%
 echo SetFilterMTMode^(^"FFVideoSource^", 3^)>>%avs_temp%
 rem echo A = FFAudioSource^(^"%input_motion%^"^)>>%avs_temp%
-echo V = FFVideoSource^(!mkv_temp!^)>>%avs_temp%
+echo V = FFVideoSource^(^"!mkv_temp!^"^)>>%avs_temp%
 rem echo source = AudioDub^(V, A^)>>%avs_temp%
 echo source = V >>%avs_temp%
 echo super = MSuper^(source, pel=2^)>>%avs_temp%
