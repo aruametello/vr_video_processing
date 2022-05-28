@@ -63,7 +63,7 @@ call :test_thing "FFPROBE.exe available" "bin\ffprobe -version" " * bin\ffprobe.
 if !error_test_thing!==1 call :fatal_error_pause
 
 
-call :test_thing "FFMPEG can use Nvidia h264 encoding" "bin\ffmpeg -y -f lavfi -i color=size=1280x720:rate=25:color=black -c:v h264_nvenc -t 2.0 -f null -" "Not required. This is only available on geforce GPUs and can speedup the process."
+call :test_thing_optional "FFMPEG can use Nvidia h264 encoding" "bin\ffmpeg -y -f lavfi -i color=size=1280x720:rate=25:color=black -c:v h264_nvenc -t 2.0 -f null -" "Not required. This is only available on geforce GPUs and can speedup the process."
 if !error_test_thing!==1 (
 set ffmpeg_encoder_opts=-c:v libx264
 set ffmpeg_decoder_opts=
@@ -88,8 +88,8 @@ if NOT "%~1"=="" (
 )else (
 	rem Pergunta pro usuario as opcoes a utilizar
 	echo %cDEFAULT%
-	echo Type or drag and drop the input video file on this window to fill this field.
-	set /P input_motion=Input file name:
+	echo # Type or drag and drop the input video file on this window to fill this field.
+	set /P input_motion=%sWhite%Input file name:%cDEFAULT%
 )
 
 
@@ -177,7 +177,7 @@ if "!input_has_audio!"=="0" echo %cRED%ERROR! input file has no audio stream!%cD
 rem read some filename for the output
 echo.
 echo Type the name of the output file (without extension) or leave blank to generate automatically a filename.
-set /P output_motion=Output file name:
+set /P output_motion=%sWhite%Output file name:%cdefault%
 
 
 rem empty field = random file name
@@ -195,9 +195,9 @@ echo.
 echo Your input video is !duration_print_format! long, the length of the output will reduce
 echo the overall video quality, it often works best at 60 seconds or less.
 echo.
-echo Input the start of the cut in the hh:mm:ss format or leave blank to use the whole video.
+echo # Input the start of the cut in the hh:mm:ss format or leave blank to use the whole video.
 echo hh:mm:ss format like 01:10:12
-set /p ts_start=Start timestamp:
+set /p ts_start=%sWhite%Start timestamp:%cdefault%
 
 if NOT "!ts_start!"=="" (
 
@@ -230,8 +230,8 @@ if NOT "!ts_start!"=="" (
 if NOT "!ts_start!"=="" (
 	:ask_time_end
 	echo.
-	echo Input the end of the cut in the hh:mm:ss format
-	set /p ts_end=End timestamp:
+	echo # Input the end of the cut in the hh:mm:ss format
+	set /p ts_end=%sWhite%End timestamp:%cDEFAULT%
 	if NOT "!ts_end!"=="" (
 	 
 	  for /f tokens^=1^,2^,3^ delims^=: %%a in ('echo !ts_end!') do (  
@@ -374,9 +374,22 @@ echo %cUP1LINE%%cDEFAULT%%~1 %cCOLUMN%%cGREEN%[OK]
 set error_test_thing=0
 
 )
-
 goto :eof
 
+::================================================================
+:test_thing_optional
+echo %cDEFAULT%%~1 %cCOLUMN%%cYELLOW%[...]
+%~2 >NUL 2>NUL
+if ERRORLEVEL 1 (
+echo %cUP1LINE%%cDEFAULT%%~1 %cCOLUMN%%cYELLOW%[not available]
+echo %cDEFAULT% %~3
+set error_test_thing=1
+exit /B
+)else (
+echo %cUP1LINE%%cDEFAULT%%~1 %cCOLUMN%%cGREEN%[OK]    
+set error_test_thing=0
+)
+goto :eof
 
 ::===================================================================
 :trim_zeroes

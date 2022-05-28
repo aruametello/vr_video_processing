@@ -25,6 +25,13 @@ set smooth_camera_factor=15
 :: shakiness is how much to refuse to follow a motion that seems to be shaking
 set shakiness_camera_factor=10
 
+
+:: video quality compression, 18 = very high and huge file, 28 = moddest size
+:: avoid a value too low if you intent to edit the video later
+set output_video_quality_ratefactor=20
+
+
+
 ::
 :: there are way more complex stuff in if you are interesting in dealing with the 
 :: avisynth scripting step, perhalps creating a less blurry "motion blur" ?
@@ -44,18 +51,18 @@ set shakiness_camera_factor=10
 
 :: -------------------------------------
 rem fancy colors to make readability somewhat better.
-rem modified, original from here https://stackoverflow.com/questions/2048509/how-to-echo-with-different-colors-in-the-windows-command-line
+rem modified, original from here https://gist.github.com/mlocati/fdabcaeb8071d5c75a2d51712db24011#file-win10colors-cmd
+
+set cDEFAULT=[0m
+set cUnderline=[4m
+
 set cRED=[31m
 set cGREEN=[32m
 set cYELLOW=[33m
 set cCYAN=[36m
-set fDEFAULT=[0m
-set cUP1LINE=[1A
-set fBOLD=[1A
-set cDEFAULT=[0m
-set cCOLUMN=[40G
+set cWHITE=[90m
 
-set sWHITE=[90m
+
 set sRED=[91m
 set sGREEN=[92m
 set sYELLOW=[93m
@@ -63,6 +70,11 @@ set sBLUE=[94m
 set sMAGENTA=[95m
 set sCYAN=[96m
 set sWHITE=[97m
+
+
+set cUP1LINE=[1A
+set fBOLD=[1A
+set cCOLUMN=[40G
 
 
 :start_over
@@ -108,6 +120,7 @@ FOR /F "tokens=2* delims= " %%a IN ('REG QUERY "HKEY_LOCAL_MACHINE\SOFTWARE\AviS
 call :test_thing "FFMPEG.exe available" "bin\ffmpeg -version" " * bin\ffmpeg.exe seems to be missing, download the zip at %url_ffmpeg% and copy the file bin\ffmpeg.exe to the bin folder of this script. %cd%"
 if !error_test_thing!==1 call :fatal_error_pause
 
+
 call :test_thing "FFPROBE.exe available" "bin\ffprobe -version" " * bin\ffprobe.exe seems to be missing, download the zip at %url_ffmpeg% and copy the file bin\ffprobe.exe to the bin folder of this script. %cd%"
 if !error_test_thing!==1 call :fatal_error_pause
 
@@ -127,7 +140,7 @@ if !error_test_thing!==1 (
 				start /wait avisynth_installer\AviSynthPlus_3.7.0_20210111.exe /silent
 				goto start_over
 			)else (
-				echo Missing avisynth_installer\AviSynthPlus_3.7.0_20210111.exe !
+				echo Missing avisynth_installer\AviSynthPlus_3.7.0_20210111.exe
 				call :fatal_error_pause				
 			)
 		)else (
@@ -143,14 +156,14 @@ call :test_thing "FFMPEG supports Avisynth scripts" "bin\ffmpeg -y -i %avs_temp%
 if !error_test_thing!==1 call :fatal_error_pause
 
 
-
 call :gen_avisynth_plugin_test
 call :test_thing "Avisynth required plugins" "bin\ffmpeg -y -i %avs_temp% -t 0.1 -f null -" " * You might be missing the ffms2.dll and/or mvtools2.dll plugins in the avisynth_plugins folder."
 if !error_test_thing!==1 (
 call :fatal_error_pause
 )
 
-call :test_thing "FFMPEG can use Nvidia h264 encoding" "bin\ffmpeg -y -i %avs_temp% -c:v h264_nvenc -t 2.0 !mkv_temp!" "Not required. This is only available on geforce GPUs and can speedup the process."
+
+call :test_thing_optional "FFMPEG can use Nvidia h264 encoding" "bin\ffmpeg -y -i %avs_temp% -c:v h264_nvenc -t 2.0 !mkv_temp!" " * Not required. This is only available on nvidia GPUs and can speedup the process."
 if !error_test_thing!==1 (
 set ffmpeg_encoder_opts=-c:v libx264
 set ffmpeg_decoder_opts=
@@ -189,10 +202,22 @@ if NOT "%~1"=="" (
 	echo %cDEFAULT%
 	echo Using "%~1" as the input file from the command line.
 )else (
+	:ask_input_again
 	rem Pergunta pro usuario as opcoes a utilizar
 	echo %cDEFAULT%
-	echo Type or drag and drop the input video file on this window to fill this field.
-	set /P input_motion=Input file name:
+	echo # Type or drag and drop the input video file on this window to fill this field.
+	set input_motion=
+	set /P input_motion=%sWHITE%Input file name:%cDEFAULT%
+	
+	if "!input_motion!"=="" (
+		echo %sRED%error:%sYellow% the input_motion field can not be blank.%cdefault%
+		goto ask_input_again
+	)else (	
+		if NOT EXIST "!input_motion!" (
+			echo %sRED%error:%sYellow% cant read !input_motion!, check if the path is correct.%cdefault%
+			goto ask_input_again		
+		)
+	)	
 )
 
 
@@ -207,6 +232,8 @@ rem check the source file
 set input_has_audio=0
 set input_has_video=0
 set final_input_mapping=-i !avs_temp!
+
+
 for /f "tokens=1* delims==" %%a in ('bin\ffprobe -v quiet -i !input_motion! -print_format ini -show_streams ^2^>^&1') do (
 	rem echo %%a -- %%b
 	if "%%a"=="r_frame_rate" for /f "tokens=1 delims=/" %%f in ("%%b") do set ffprobe_r_frame_rate=%%f
@@ -248,16 +275,16 @@ for /f "tokens=1* delims==" %%a in ('bin\ffprobe -v quiet -i !input_motion! -pri
 
 
 rem warn the user if the file is weird
-if "!input_has_video!"=="0" echo %cRED%ERROR! input file has no video stream!%cDEFAULT% && call :fatal_error_pause
-if "!input_has_audio!"=="0" echo %cRED%NOTICE: input file has no audio stream.%cDEFAULT%
+if "!input_has_video!"=="0" echo %sRED%ERROR: input file has no video stream.%cDEFAULT% && call :fatal_error_pause
+if "!input_has_audio!"=="0" echo %sRED%NOTICE: input file has no audio stream.%cDEFAULT%
 
 
 
 
 rem read some filename for the output
 echo.
-echo Type the name of the output file (without extension) or leave blank to generate automatically a filename.
-set /P output_motion=Output file name:
+echo # Type the name of the output file (without extension) or leave blank to generate automatically a filename.
+set /P output_motion=%sWHITE%Output file name:%cDEFAULT%
 
 
 rem empty field = random file name
@@ -272,9 +299,9 @@ set output_motion=!output_motion!.mp4
 rem ---------------------------------------------------
 :ask_time
 echo.
-echo Input the start of the cut in the hh:mm:ss format or leave blank to use the whole video.
+echo # Input the start of the cut in the hh:mm:ss format or leave blank to use the whole video.
 echo hh:mm:ss format like 01:10:12
-set /p ts_start=Start timestamp:
+set /p ts_start=%sWHITE%Start timestamp:%cDEFAULT%
 
 if NOT "!ts_start!"=="" (
 
@@ -303,8 +330,8 @@ if NOT "!ts_start!"=="" (
 if NOT "!ts_start!"=="" (
 	:ask_time_end
 	echo.
-	echo Input the end of the cut in the hh:mm:ss format
-	set /p ts_end=End timestamp:
+	echo # Input the end of the cut in the hh:mm:ss format
+	set /p ts_end=%sWHITE%End timestamp:%cDEFAULT%
 	if NOT "!ts_end!"=="" (
 	 
 	  for /f tokens^=1^,2^,3^ delims^=: %%a in ('echo !ts_end!') do (  
@@ -345,13 +372,57 @@ if NOT "!duration_user!"=="" set duration_user=-t !duration_user!
 
 rem ---------------------------------------------------
 
+
+
+:: motion blur strength
+echo.
+echo # Motion Blur setting, use your number keys (1 to 4) to choose.
+echo.
+echo %cGREEN%(1) Maximum %cCYAN%^(equivalent to a real camera with 16.7ms exposure^)%cDEFAULT%
+echo %cGREEN%(2) High    %cCYAN%^(Avoids exessive blur, still smooth^)%cDEFAULT%
+echo %cGREEN%(3) Average %cCYAN%^(retains most of the focus on motion^)%cDEFAULT%
+echo %cGREEN%(4) Minimum %cCYAN%^(can cause motion artifacts^)%cDEFAULT%
+echo %sWHITE%
+choice /C 1234 /M "Motion blur setting:"
+goto config_mblur_%ERRORLEVEL%
+:config_mblur_1
+set frame_blending_mixing_weigth_f1=0.5
+set frame_blending_mixing_weigth_f2=0.5
+set frame_blending_mixing_weigth_f3=0.5
+set frame_blending_mixing_weigth_f4=0.5
+goto mblur_end
+:config_mblur_2
+set frame_blending_mixing_weigth_f1=0.5
+set frame_blending_mixing_weigth_f2=0.625
+set frame_blending_mixing_weigth_f3=0.750
+set frame_blending_mixing_weigth_f4=0.875
+goto mblur_end
+:config_mblur_3
+set frame_blending_mixing_weigth_f1=0.650
+set frame_blending_mixing_weigth_f2=0.737
+set frame_blending_mixing_weigth_f3=0.824
+set frame_blending_mixing_weigth_f4=0.911
+goto mblur_end
+:config_mblur_4
+set frame_blending_mixing_weigth_f1=0.8
+set frame_blending_mixing_weigth_f2=0.85
+set frame_blending_mixing_weigth_f3=0.90
+set frame_blending_mixing_weigth_f4=0.95
+:mblur_end
+:: f1 to f4 means how each frame (newest to oldest) will be blended in weigth (merge function in avisynth)
+:: maximum does blend all frames in a 16.7 window with equal weigths (think long exposure)
+:: the other options deemphasize the older frames, making them more transparent. (how some games do motion blur)
+
+
 rem ---------------------------------------------------
 
 
+echo %cdefault%
+echo # Duplicate frames
 echo.
 echo Dropping duplicate frames can improve motion smoothness if your gameplay video couldnt hit flawless performance,
 echo but may cause a video desync if too many frames are dropped in an uneven rate.
-echo.
+echo %sWHITE%
 
 set mp_decimate_filter=
 choice /C YN /M "Drop duplicate frames?"
@@ -366,7 +437,7 @@ if "!input_has_audio!"=="1" set final_input_mapping=-i !avs_temp! -i "!mkv_temp!
 
 
 
-echo.
+echo %cDEFAULT%
 echo * %cGREEN%^(1/3^) %cCYAN%Processing the motion detection for the deshake filter...%cDEFAULT%
 bin\ffmpeg !ffmpeg_prepend! !ffmpeg_decoder_opts! !ts_start_secs! -i %input_motion% !duration_user! -vf "!mp_decimate_filter!vidstabdetect=shakiness=!shakiness_camera_factor!:accuracy=15:stepsize=6:mincontrast=0.3:result=!transforms_temp!" -f null -
 if ERRORLEVEL 1 echo fatal ffmpeg error! && call :fatal_error_pause
@@ -382,7 +453,7 @@ call :gen_avisynth_script
 
 echo.
 echo * %cGREEN%^(3/3^) %cCYAN%Rendering the final file with motion interpolation... ^(This step is VERY slow!^) %cDEFAULT%
-bin\ffmpeg %ffmpeg_prepend% !final_input_mapping! !ffmpeg_encoder_opts! -rc:v vbr_minqp -qmin:v 1 -qmax:v 28 "%output_motion%"
+bin\ffmpeg %ffmpeg_prepend% !final_input_mapping! !ffmpeg_encoder_opts! -rc:v vbr_minqp -qmin:v 1 -qmax:v !output_video_quality_ratefactor! "%output_motion%"
 if ERRORLEVEL 1 echo fatal ffmpeg error! && call :fatal_error_pause
 
 
@@ -429,9 +500,22 @@ exit /B
 )else (
 echo %cUP1LINE%%cDEFAULT%%~1 %cCOLUMN%%cGREEN%[OK]    
 set error_test_thing=0
-
 )
+goto :eof
 
+::================================================================
+:test_thing_optional
+echo %cDEFAULT%%~1 %cCOLUMN%%cYELLOW%[...]
+%~2 >NUL 2>NUL
+if ERRORLEVEL 1 (
+echo %cUP1LINE%%cDEFAULT%%~1 %cCOLUMN%%cYELLOW%[not available]
+echo %cDEFAULT% %~3
+set error_test_thing=1
+exit /B
+)else (
+echo %cUP1LINE%%cDEFAULT%%~1 %cCOLUMN%%cGREEN%[OK]    
+set error_test_thing=0
+)
 goto :eof
 
 
@@ -453,10 +537,10 @@ echo super = MSuper^(source, pel=2^)>>%avs_temp%
 echo backward_vectors = MAnalyse^(super, blksize=8, overlap=4, isb=true, dct=1, search=3^)>>%avs_temp%
 echo forward_vectors = MAnalyse^(super, blksize=8, overlap=4, isb=false, dct=1, search=3^)>>%avs_temp%
 echo MFlowFps^(source, super, backward_vectors, forward_vectors, num=960000, den=1000, ml=100^)>>%avs_temp%
-echo Merge^(SelectEven^(^), SelectOdd^(^)^)>>%avs_temp%
-echo Merge^(SelectEven^(^), SelectOdd^(^)^)>>%avs_temp%
-echo Merge^(SelectEven^(^), SelectOdd^(^)^)>>%avs_temp%
-echo Merge^(SelectEven^(^), SelectOdd^(^)^)>>%avs_temp%
+echo Merge^(SelectEven^(^), SelectOdd^(^)^,!frame_blending_mixing_weigth_f1!)>>%avs_temp%
+echo Merge^(SelectEven^(^), SelectOdd^(^)^,!frame_blending_mixing_weigth_f2!)>>%avs_temp%
+echo Merge^(SelectEven^(^), SelectOdd^(^)^,!frame_blending_mixing_weigth_f3!)>>%avs_temp%
+echo Merge^(SelectEven^(^), SelectOdd^(^)^,!frame_blending_mixing_weigth_f4!)>>%avs_temp%
 echo Prefetch^(%NUMBER_OF_PROCESSORS%^)>>%avs_temp%
 goto :eof
 
