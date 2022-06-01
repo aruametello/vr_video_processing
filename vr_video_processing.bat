@@ -236,12 +236,21 @@ set final_input_mapping=-i !avs_temp!
 
 for /f "tokens=1* delims==" %%a in ('bin\ffprobe -v quiet -i !input_motion! -print_format ini -show_streams ^2^>^&1') do (
 	rem echo %%a -- %%b
-	if "%%a"=="r_frame_rate" for /f "tokens=1 delims=/" %%f in ("%%b") do set ffprobe_r_frame_rate=%%f
 	if "%%a"=="codec_name" set ffprobe_codec_name=%%b
 	if "%%a"=="codec_type" set ffprobe_codec_type=%%b
 	if "%%a"=="width" set ffprobe_width=%%b
 	if "%%a"=="height" set ffprobe_height=%%b
 	if "%%a"=="codec_name" set ffprobe_codec_name=%%b
+
+	if "%%a"=="r_frame_rate" for /f "tokens=1,2 delims=/" %%c in ("%%b") do (
+
+	
+		if "%%d"=="" (
+			set /a ffprobe_r_frame_rate_100=^(%%c * 100^)
+		)else (
+			set /a ffprobe_r_frame_rate_100=^(%%c * 100^) / %%d
+		)
+	)
 
 
 	if "%%a"=="duration" (
@@ -254,10 +263,11 @@ for /f "tokens=1* delims==" %%a in ('bin\ffprobe -v quiet -i !input_motion! -pri
 		
 		if "!ffprobe_codec_type!"=="video" (
 			set input_has_video=1
-			echo %cCYAN%Input video format: %sYELLOW%!ffprobe_codec_name! !ffprobe_width!x!ffprobe_height!@!ffprobe_r_frame_rate!fps%cDEFAULT%
+			call :format_float !ffprobe_r_frame_rate_100!
+			echo %cCYAN%Input video format: %sYELLOW%!ffprobe_codec_name! !ffprobe_width!x!ffprobe_height!@!ret_float!fps%cDEFAULT%
 			
 			rem warn if the captured framerate suck
-			if /i !ffprobe_r_frame_rate! LEQ 60 echo %sRED%Warning:%cYELLOW% this video file does not seem to be a full framerate capture, OBS using "game capture" + match video fps to VR screen frequency is strongly recomended!. if not the result might suck.%cDEFAULT%
+			if /i !ffprobe_r_frame_rate_100! LEQ 6000 echo %sRED%Warning:%cYELLOW% this video file does not seem to be a full framerate capture, OBS using "game capture" + match video fps to VR screen frequency is strongly recomended!. if not the result might suck.%cDEFAULT%
 			
 			rem warn if the video aspect ratio suck
 			set /a aspect_ratio_100= ^(!ffprobe_width! * 100^) / !ffprobe_height!
@@ -558,6 +568,12 @@ echo Version^(^)>>%avs_temp%
 goto :eof
 
 
+::================================================================
+:format_float
+set /a ff_a=%1 / 100
+set /a ff_b=%1 %% 100
+set ret_float=!ff_a!.!ff_b!
+goto :eof
 
 ::===================================================================
 :trim_zeroes
