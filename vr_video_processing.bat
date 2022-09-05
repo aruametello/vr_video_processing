@@ -1,5 +1,7 @@
 @echo off
 setlocal ENABLEDELAYEDEXPANSION
+set fp=10000
+
 ::
 ::  file: vr_video_processing.bat
 ::
@@ -10,25 +12,29 @@ setlocal ENABLEDELAYEDEXPANSION
 ::  and downsample the framerate to a proper paced 60 frames per second
 ::  
 ::  it is intended to use with VR gameplay footage, but works with
-::  any videos you feed it.
+::  any videos you feed it. (shaky cams at uneven framerates)
 ::
 :: -------------------------------------
 :: if you are looking to tweak extra stuff, maybe those are the settings you are looking for
 
 :: lowballing the zoom will cause a black border to apear when the screen shakes
-:: bigger zoom = better avoidance of black borders
-set zoom=20
+:: bigger zoom = better avoidance of black borders but the video is more cropped
+:: values: 0 - 100 (percent)
+set zoom=17
 
-:: smooth camera factor is somewhat how inertial the camera movement is
-set smooth_camera_factor=15
+:: smooth camera factor is somewhat how inertial the camera movement is (measure in buffer frames before and after the shake)
+:: values: 0 - infinite (its proportional to your input framerate, 30 is probably a lot)
+set smooth_camera_factor=12
 
-:: shakiness is how much to refuse to follow a motion that seems to be shaking
-set shakiness_camera_factor=10
+:: shakiness regulates how fast the camera respond to motion. (low values means it will lag behind laggier)
+:: values: 0 - 10
+set shakiness_camera_factor=9
 
 
 :: video quality compression, 18 = very high and huge file, 28 = moddest size
 :: avoid a value too low if you intent to edit the video later
-set output_video_quality_ratefactor=20
+:: you really dont want this bellow 18... ?
+set output_video_quality_ratefactor=19
 
 
 
@@ -44,10 +50,9 @@ set output_video_quality_ratefactor=20
 ::
 :: it fixes the uneven motion in the displayed frames recorded above 60fps.
 ::
-:: This can create great results with just 72hz gameplay (like i did), but the more
-:: frames the better, multiple of 60 are ideal (120hz?) but make sure you can run
-:: the game without dropping from the target framerate! dropped frames are bad.
-
+:: This can create good results with just 72hz gameplay (like i did), but the more
+:: frames the better, multiples of 60 are ideal (120hz?) but make sure you can run
+:: the game without dropping from the target framerate! unstable 120hz is worse than stable 80hz
 
 :: -------------------------------------
 rem fancy colors to make readability somewhat better.
@@ -62,6 +67,8 @@ set cYELLOW=[33m
 set cCYAN=[36m
 set cWHITE=[90m
 
+
+set sGRAY=[90m
 
 set sRED=[91m
 set sGREEN=[92m
@@ -78,12 +85,16 @@ set cCOLUMN=[40G
 
 
 :start_over
-cd /D "%~dp0"
-
+set cdir=%cd%
+set script_dir=%~dp0
+cd /d !script_dir!
 
 Title ### vr video motion smoother thingy ###
 cls
 echo %cCYAN%checking dependencies... 
+
+
+
 
 
 rem starting state of the terminal colors
@@ -104,10 +115,11 @@ set url_ffmpeg=https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-full.7z
 set url_avisynth=https://github.com/AviSynth/AviSynthPlus/releases/download/v3.7.0/AviSynthPlus_3.7.0_20210111.exe
 
 
-set ffmpeg_prepend=-y -loglevel quiet -stats
+set ffmpeg_prepend=-y -loglevel error -stats
 set ffmpeg_decoder_opts=-c:v h264_cuvid
 set ffmpeg_encoder_opts=-c:v h264_nvenc
 
+set show_cmdline=1
 
 
 
@@ -165,9 +177,12 @@ call :fatal_error_pause
 
 call :test_thing_optional "FFMPEG can use Nvidia h264 encoding" "bin\ffmpeg -y -i %avs_temp% -c:v h264_nvenc -t 2.0 !mkv_temp!" " * Not required. This is only available on nvidia GPUs and can speedup the process."
 if !error_test_thing!==1 (
+rem use software encoding
 set ffmpeg_encoder_opts=-c:v libx264
+rem use software decoding
 set ffmpeg_decoder_opts=
 )else (
+
  rem delete the temporary mkv
  del !mkv_temp! >NUL 2>NUL 
  
@@ -244,11 +259,17 @@ for /f "tokens=1* delims==" %%a in ('bin\ffprobe -v quiet -i !input_motion! -pri
 
 	if "%%a"=="r_frame_rate" for /f "tokens=1,2 delims=/" %%c in ("%%b") do (
 
+		rem echo framerate: %%c e %%d
 	
 		if "%%d"=="" (
-			set /a ffprobe_r_frame_rate_100=^(%%c * 100^)
+			set /a ffprobe_r_frame_rate_100=^(%%c * !fp!^)
 		)else (
-			set /a ffprobe_r_frame_rate_100=^(%%c * 100^) / %%d
+			if "%%d"=="0" (
+				rem nao executar uma divisao por zero!
+				set /a ffprobe_r_frame_rate_100=^(%%c * !fp!^)
+			)else (
+				set /a ffprobe_r_frame_rate_100=^(%%c * !fp!^) / %%d
+			)
 		)
 	)
 
@@ -267,7 +288,7 @@ for /f "tokens=1* delims==" %%a in ('bin\ffprobe -v quiet -i !input_motion! -pri
 			echo %cCYAN%Input video format: %sYELLOW%!ffprobe_codec_name! !ffprobe_width!x!ffprobe_height!@!ret_float!fps%cDEFAULT%
 			
 			rem warn if the captured framerate suck
-			if /i !ffprobe_r_frame_rate_100! LEQ 6000 echo %sRED%Warning:%cYELLOW% this video file does not seem to be a full framerate capture, OBS using "game capture" + match video fps to VR screen frequency is strongly recomended!. if not the result might suck.%cDEFAULT%
+			if /i !ffprobe_r_frame_rate_100! LSS 60000 echo %sRED%Warning:%cYELLOW% this video file does not seem to be a full framerate capture, OBS using "game capture" + match video fps to VR screen frequency is strongly recomended!. if not the result might suck.%cDEFAULT%
 			
 			rem warn if the video aspect ratio suck
 			set /a aspect_ratio_100= ^(!ffprobe_width! * 100^) / !ffprobe_height!
@@ -285,7 +306,7 @@ for /f "tokens=1* delims==" %%a in ('bin\ffprobe -v quiet -i !input_motion! -pri
 
 
 rem warn the user if the file is weird
-if "!input_has_video!"=="0" echo %sRED%ERROR: input file has no video stream.%cDEFAULT% && call :fatal_error_pause
+if "!input_has_video!"=="0" echo %sRED%ERROR: input file has no video stream.%cDEFAULT% & call :fatal_error_pause
 if "!input_has_audio!"=="0" echo %sRED%NOTICE: input file has no audio stream.%cDEFAULT%
 
 
@@ -299,9 +320,9 @@ set /P output_motion=%sWHITE%Output file name:%cDEFAULT%
 
 rem empty field = random file name
 if "%output_motion%"=="" (
-set output_motion=interp_%random%.mp4
+set output_motion=!cdir!\interp_%random%.mp4
 )else (
-set output_motion=!output_motion!.mp4
+set output_motion=!cdir!\!output_motion!.mp4
 )
 
 
@@ -369,7 +390,7 @@ if NOT "!ts_start!"=="" (
 
 	  if !duration_user! LSS 0 (
 	  echo.
-	  echo ERROR: Check the timestamps, they seem invalid!
+	  echo %sRED%ERROR:%sYellow% Check the timestamps, they seem invalid!
 	  echo.
 	  goto ask_time_end
 	  )
@@ -424,9 +445,10 @@ set frame_blending_mixing_weigth_f4=0.95
 :: the other options deemphasize the older frames, making them more transparent. (how some games do motion blur)
 
 
+
+
 rem ---------------------------------------------------
-
-
+goto skip_duplicate_question
 echo %cdefault%
 echo # Duplicate frames
 echo.
@@ -436,35 +458,191 @@ echo %sWHITE%
 
 set mp_decimate_filter=
 choice /C YN /M "Drop duplicate frames?"
-if "%ERRORLEVEL%"=="1" set mp_decimate_filter=mpdecimate=hi=3036:lo=640:frac=1.0,
+if "%ERRORLEVEL%"=="1" set mp_decimate_filter=mpdecimate=hi=3036:lo=640:frac=1.0,setpts=N/FRAME_RATE/TB,
+
+:skip_duplicate_question
 
 
+rem ---------------------------------------------------
+echo %cdefault%
+echo # Aspect ratio
+echo.
+echo %cGREEN%(1) 4:3    %cCYAN%^(recomended: a good balance between field of view and shape^)%cDEFAULT%
+echo %cGREEN%(2) 16:9   %cCYAN%^(cuts out vertical detail, but fills regular tv/monitors^)%cDEFAULT%
+echo %cGREEN%(3) 1:1    %cCYAN%^(a square image, natural to eye but weird in a screeen^)%cDEFAULT%
+echo %cGREEN%(4) Original %cCYAN%^(use aspect and resolution as is^)%cDEFAULT%
+echo %sWHITE%
+choice /C 1234 /M "Aspect ratio:"
+set ret=%ERRORLEVEL%
+if "!ret!"=="1" set aspect_ratio=4:3
+if "!ret!"=="2" set aspect_ratio=16:9
+if "!ret!"=="3" set aspect_ratio=1:1
+if "!ret!"=="4" set aspect_ratio=original & set output_x=!ffprobe_width! & set output_y=!ffprobe_height!
+
+
+rem ---------------------------------------------------
+
+if "!aspect_ratio!"=="16:9" (
+echo %cdefault%
+echo # Output resolution
+echo.
+echo %cGREEN%^(1^) 1920x1080  %cCYAN%^(a regular youtube video^)%cDEFAULT%
+echo %cGREEN%^(2^) 1600x900   %cCYAN%^(average^)%cDEFAULT%
+echo %cGREEN%^(3^) 1280x720   %cCYAN%^(might be enough for discord, can save time^)%cDEFAULT%
+echo %sWHITE%
+choice /C 123 /M "Resolution setting:"
+set ret=%ERRORLEVEL%
+if "!ret!"=="1" set output_x=1920& set output_y=1080
+if "!ret!"=="2" set output_x=1600& set output_y=900
+if "!ret!"=="3" set output_x=1280& set output_y=720
+)
+
+if "!aspect_ratio!"=="4:3" (
+echo %cdefault%
+echo # Output resolution
+echo.
+echo %cGREEN%^(1^) 1440x1080 %cCYAN%^(youtube 1080p with 4:3 display^)%cDEFAULT%
+echo %cGREEN%^(2^) 1200x900  %cCYAN%^(average^)%cDEFAULT%
+echo %cGREEN%^(3^) 960x720   %cCYAN%^(just above a dvd^)%cDEFAULT%
+echo %sWHITE%
+choice /C 123 /M "Resolution setting:"
+set ret=%ERRORLEVEL%
+if "!ret!"=="1" set output_x=1440& set output_y=1080
+if "!ret!"=="2" set output_x=1200& set output_y=900
+if "!ret!"=="3" set output_x=960& set output_y=720
+)
+
+if "!aspect_ratio!"=="1:1" (
+echo %cdefault%
+echo # Output resolution
+echo.
+echo %cGREEN%^(1^) 1440x1440 %cCYAN%^(high res, good for editing^)%cDEFAULT%
+echo %cGREEN%^(2^) 1080x1080 %cCYAN%^(sort of 1080p^)%cDEFAULT%
+echo %cGREEN%^(3^) 900x900   %cCYAN%^(low res^)%cDEFAULT%
+echo %sWHITE%
+choice /C 123 /M "Resolution setting:"
+set ret=%ERRORLEVEL%
+if "!ret!"=="1" set output_x=1440& set output_y=1440
+if "!ret!"=="2" set output_x=1080& set output_y=1080
+if "!ret!"=="3" set output_x=900& set output_y=900
+)
+
+
+
+
+rem ---------------------------------------------------
+:: target framerate output
+echo.
+echo # Target output framerate.
+echo.
+echo %cGREEN%(1) 60FPS%cDEFAULT%
+echo %cGREEN%(2) 30FPS%cDEFAULT%
+echo.
+choice /C 12 /M "Output framerate:"
+goto config_fps_%ERRORLEVEL%
+:config_fps_1
+set target_fps=60
+set output_30_fps=0
+goto config_fps_end
+:config_fps_2
+set target_fps=30
+set output_30_fps=1
+goto config_fps_end
+:config_fps_end
+
+
+
+rem ------------------------------
+rem calculations related to cropping and aspect ratio
+
+
+set input_x=!ffprobe_width!
+set input_y=!ffprobe_height!
+
+
+rem screen ratio of the input and output
+set /a scale_in=(input_x*!fp!) / input_y
+set /a scale_out=(output_x*!fp!) / output_y
+
+
+
+
+rem ================
+rem nescessario mudar a razao do video?
+if NOT "!scale_in:~0,3!"=="!scale_out:~0,3!" (
+ rem compare if they are "close enough", because this batch file floating point
+ rem match is an unholy mess of low accuracy
+
+ set /a crop_scale_y = !scale_out! * !fp! / !scale_in!
+ 
+ if !crop_scale_y! LSS !fp! (
+   echo %sRED%ERROR:%sYellow% the input footage is less "tall" than the !aspect_ratio! requested aspect ratio.
+   echo        its not possible to crop this video without ruining the horizontal FOV.
+   echo        try with a wider aspect ratio or recapture the video using the full frame of STEAMVR.%cdefault%
+   call :fatal_error_pause 
+ )
+ 
+ call :format_float !crop_scale_y!
+ set crop_x=1.0
+ set crop_y=!ret_float!
+
+ rem echo crop_Y=!crop_y!
+
+ rem se a razao de entrada bate, n precisa do crop
+ set crop_filter=,crop=in_w/!crop_x!:in_h/!crop_y!:^(in_w-^(in_w/!crop_x!^)^)/2:^(in_h-^(in_h/!crop_y!^)^)/2
+)else (
+ rem no need for crop filter
+ set crop_filter=
+)
+
+rem ================
+rem nescessario mudar a resolucao do video?
+if NOT "!output_x!x!output_y!"=="!input_x!x!input_y!" (
+ rem se a resolucao de entrada bate, nao precisa do resize
+ set resize_filter=,scale=!output_x!:!output_y!
+)else (
+ set resize_filter=
+)
+
+
+rem echo BLUR: !frame_blending_mixing_weigth_f4!
+rem echo !input_x!x!input_y! to !output_x!x!output_y!
+rem echo compare "!scale_in:~0,3!"=="!scale_out:~0,3!"
+rem echo !scale_in! vs !scale_out!
+rem echo filter: !crop_filter!!resize_filter!
+rem pause
+
+
+
+
+rem --------------------------------
 
 set motion_file_temp=motion_data_%random%%random%.tmp
-
-
 if "!input_has_audio!"=="1" set final_input_mapping=-i !avs_temp! -i "!mkv_temp!" -map 0:v:0 -map 1:a:0
 
 
 
 echo %cDEFAULT%
 echo * %cGREEN%^(1/3^) %cCYAN%Processing the motion detection for the deshake filter...%cDEFAULT%
+if "!show_cmdline!"=="1" echo %sGRAY%executing: bin\ffmpeg !ffmpeg_prepend! !ffmpeg_decoder_opts! !ts_start_secs! -i %input_motion% !duration_user! -vf "!mp_decimate_filter!vidstabdetect=shakiness=!shakiness_camera_factor!:accuracy=15:stepsize=6:mincontrast=0.3:result=!transforms_temp!" -f null -%cDEFAULT%&echo.
 bin\ffmpeg !ffmpeg_prepend! !ffmpeg_decoder_opts! !ts_start_secs! -i %input_motion% !duration_user! -vf "!mp_decimate_filter!vidstabdetect=shakiness=!shakiness_camera_factor!:accuracy=15:stepsize=6:mincontrast=0.3:result=!transforms_temp!" -f null -
-if ERRORLEVEL 1 echo fatal ffmpeg error! && call :fatal_error_pause
+if ERRORLEVEL 1 echo fatal ffmpeg error! & call :fatal_error_pause
 
 echo.
-echo * %cGREEN%^(2/3^) %cCYAN%Rendering the deshaken intermediary file...%cDEFAULT% "!mkv_temp!"
-bin\ffmpeg !ffmpeg_prepend! %ffmpeg_decoder_opts% !ts_start_secs! -i %input_motion% !duration_user! -vf "!mp_decimate_filter!vidstabtransform=smoothing=!smooth_camera_factor!:interpol=linear:crop=black:zoom=!zoom!:input=!transforms_temp!,unsharp=5:5:0.8:3:3:0.4,format=yuv420p" !ffmpeg_encoder_opts! -preset fast -rc:v vbr_minqp -qmin:v 1 -qmax:v 18 "!mkv_temp!"
-if ERRORLEVEL 1 echo fatal ffmpeg error! && call :fatal_error_pause
+echo * %cGREEN%^(2/3^) %cCYAN%Rendering the deshaken, cropped and rescaled intermediary file...%cDEFAULT% "!mkv_temp!"
+if "!show_cmdline!"=="1" echo %sGRAY%executing: bin\ffmpeg !ffmpeg_prepend! %ffmpeg_decoder_opts% !ts_start_secs! -i %input_motion% !duration_user! -vsync vfr -vf "!mp_decimate_filter!vidstabtransform=smoothing=!smooth_camera_factor!:interpol=linear:crop=black:zoom=!zoom!:input=!transforms_temp!,unsharp=5:5:0.8:3:3:0.4,format=yuv420p!crop_filter!!resize_filter!" !ffmpeg_encoder_opts! -preset fast -rc:v vbr_minqp -qmin:v 1 -qmax:v 18 "!mkv_temp!"%cDEFAULT%&echo.
+bin\ffmpeg !ffmpeg_prepend! %ffmpeg_decoder_opts% !ts_start_secs! -i %input_motion% !duration_user! -vsync vfr -vf "!mp_decimate_filter!vidstabtransform=smoothing=!smooth_camera_factor!:interpol=linear:crop=black:zoom=!zoom!:input=!transforms_temp!,unsharp=5:5:0.8:3:3:0.4,format=yuv420p!crop_filter!!resize_filter!" !ffmpeg_encoder_opts! -preset fast -rc:v vbr_minqp -qmin:v 1 -qmax:v 18 "!mkv_temp!"
+if ERRORLEVEL 1 echo fatal ffmpeg error! & call :fatal_error_pause
 
 
 rem generate the avisynth script that does the motion interpolation
 call :gen_avisynth_script
 
 echo.
-echo * %cGREEN%^(3/3^) %cCYAN%Rendering the final file with motion interpolation... ^(This step is VERY slow!^) %cDEFAULT%
+echo * %cGREEN%^(3/3^) %cCYAN%Rendering the final file with motion interpolation targeting !target_fps!fps.%cDEFAULT%
+if "!show_cmdline!"=="1" echo %sGRAY%executing: bin\ffmpeg %ffmpeg_prepend% !final_input_mapping! !ffmpeg_encoder_opts! -rc:v vbr_minqp -qmin:v 1 -qmax:v !output_video_quality_ratefactor! "%output_motion%"%cDEFAULT%&echo.
 bin\ffmpeg %ffmpeg_prepend% !final_input_mapping! !ffmpeg_encoder_opts! -rc:v vbr_minqp -qmin:v 1 -qmax:v !output_video_quality_ratefactor! "%output_motion%"
-if ERRORLEVEL 1 echo fatal ffmpeg error! && call :fatal_error_pause
+if ERRORLEVEL 1 echo fatal ffmpeg error! & call :fatal_error_pause
 
 
 rem delete the ffindex file created with the mkv.
@@ -551,6 +729,10 @@ echo Merge^(SelectEven^(^), SelectOdd^(^)^,!frame_blending_mixing_weigth_f1!)>>%
 echo Merge^(SelectEven^(^), SelectOdd^(^)^,!frame_blending_mixing_weigth_f2!)>>%avs_temp%
 echo Merge^(SelectEven^(^), SelectOdd^(^)^,!frame_blending_mixing_weigth_f3!)>>%avs_temp%
 echo Merge^(SelectEven^(^), SelectOdd^(^)^,!frame_blending_mixing_weigth_f4!)>>%avs_temp%
+
+rem an extra merge of neighbor frames if the target is 30
+if "!output_30_fps!"=="1" echo Merge^(SelectEven^(^), SelectOdd^(^)^,!frame_blending_mixing_weigth_f4!)>>%avs_temp%
+
 echo Prefetch^(%NUMBER_OF_PROCESSORS%^)>>%avs_temp%
 goto :eof
 
@@ -568,11 +750,43 @@ echo Version^(^)>>%avs_temp%
 goto :eof
 
 
-::================================================================
+::===================================================================
 :format_float
-set /a ff_a=%1 / 100
-set /a ff_b=%1 %% 100
-set ret_float=!ff_a!.!ff_b!
+
+set ff_str=%1
+rem numero q vem antes da virgula
+set /a ff_a=%1 / !fp!
+
+
+rem its 0. everything else
+if "!ff_a!"=="0" set ret_float=!ff_a!.%1& goto :eof
+
+
+rem comprimento do numero completo
+call :strlen %1
+set ff_lenf=!ret_strlen!
+
+rem comprimento do q vem antes da virgula
+call :strlen !ff_a!
+set /a ff_len1=!ff_lenf! - !ret_strlen!
+
+
+rem numero antes virgula, virgula e resto da string
+
+if "!ret_strlen!"=="1" set ret_float=!ff_a!.!ff_str:~1,%ff_len1%!
+if "!ret_strlen!"=="2" set ret_float=!ff_a!.!ff_str:~2,%ff_len1%!
+if "!ret_strlen!"=="3" set ret_float=!ff_a!.!ff_str:~3,%ff_len1%!
+if "!ret_strlen!"=="4" set ret_float=!ff_a!.!ff_str:~4,%ff_len1%!
+
+
+goto :eof
+
+::================================================================
+:strlen
+set strlendata=%1
+for /L %%x in (1,1,1000) do ( if "!strlendata:~%%x!"=="" set Lenght=%%x& goto strlen_result )
+:strlen_result
+set ret_strlen=!Lenght!
 goto :eof
 
 ::===================================================================
