@@ -33,7 +33,10 @@ set sWHITE=[97m
 
 
 :start_over
-cd /D "%~dp0"
+set cdir=%cd%
+set script_dir=%~dp0
+cd /d !script_dir!
+
 Title ### cut video into a 4chan friendly file ###
 cls
 echo %cCYAN%checking dependencies... 
@@ -51,7 +54,7 @@ set avs_temp="temporary_files\avisynth_%random%%random%%random%%random%.avs"
 
 set ffmpeg_prepend=-y -loglevel quiet -stats
 set ffmpeg_decoder_opts=-c:v h264_cuvid
-set ffmpeg_encoder_opts=-c:v libvpx
+set ffmpeg_encoder_opts=-c:v h264_nvenc
 
 
 
@@ -70,6 +73,7 @@ set ffmpeg_decoder_opts=
 )
 
 
+set ffmpeg_encoder_opts=-c:v libvpx
 
 
 rem call :test_thing "FFMPEG can use Nvidia h264 decoding" "bin\ffmpeg -y -c:v h264_cuvid -i ^"!mkv_temp!^" -c:v h264_nvenc -f null -" "Not required. This is only available on geforce GPUs and can speed up the process."
@@ -80,18 +84,30 @@ rem )
 
 
 
+
 rem maybe the user will drag+drop the file onto the script file instead of the window?
 if NOT "%~1"=="" (
 	set input_motion="%~1"
 	echo %cDEFAULT%
 	echo Using "%~1" as the input file from the command line.
 )else (
+	:ask_input_again
 	rem Pergunta pro usuario as opcoes a utilizar
 	echo %cDEFAULT%
 	echo # Type or drag and drop the input video file on this window to fill this field.
-	set /P input_motion=%sWhite%Input file name:%cDEFAULT%
+	set input_motion=
+	set /P input_motion=%sWHITE%Input file name:%cDEFAULT%
+	
+	if "!input_motion!"=="" (
+		echo %sRED%error:%sYellow% the input_motion field can not be blank.%cdefault%
+		goto ask_input_again
+	)else (	
+		if NOT EXIST "!input_motion!" (
+			echo %sRED%error:%sYellow% cant read !input_motion!, check if the path is correct.%cdefault%
+			goto ask_input_again		
+		)
+	)	
 )
-
 
 
 
@@ -104,13 +120,23 @@ set input_has_video=0
 set final_input_mapping=-i "!avs_temp!"
 for /f "tokens=1* delims==" %%a in ('bin\ffprobe -v quiet -i !input_motion! -print_format ini -show_streams ^2^>^&1') do (
 	rem echo %%a -- %%b
-	if "%%a"=="r_frame_rate" for /f "tokens=1 delims=/" %%f in ("%%b") do set ffprobe_r_frame_rate=%%f
+
+	if "%%a"=="r_frame_rate" for /f "tokens=1,2 delims=/" %%c in ("%%b") do (
+
+	
+		if "%%d"=="" (
+			set /a ffprobe_r_frame_rate_100=^(%%c * 100^)
+		)else (
+			set /a ffprobe_r_frame_rate_100=^(%%c * 100^) / %%d
+		)
+	)
 	if "%%a"=="codec_name" set ffprobe_codec_name=%%b
 	if "%%a"=="codec_type" set ffprobe_codec_type=%%b
 	if "%%a"=="width" set ffprobe_width=%%b
 	if "%%a"=="height" set ffprobe_height=%%b
 	if "%%a"=="codec_name" set ffprobe_codec_name=%%b
 
+	if "%%a"=="bit_rate" set bitrate=%%b
 
 	if "%%a"=="DURATION" set duration_in_secs=%%b
 
@@ -124,10 +150,13 @@ for /f "tokens=1* delims==" %%a in ('bin\ffprobe -v quiet -i !input_motion! -pri
 		)
 		
 		if "!ffprobe_codec_type!"=="video" (
+			set ffprobe_video_bitrate=!bitrate!
+			echo Bitrate: !ffprobe_video_bitrate!
 		
 		
 			set input_has_video=1
-			echo %cCYAN%Input video format: %sYELLOW%!ffprobe_codec_name! !ffprobe_width!x!ffprobe_height!@!ffprobe_r_frame_rate!fps%cDEFAULT%
+			call :format_float !ffprobe_r_frame_rate_100!			
+			echo %cCYAN%Input video format: %sYELLOW%!ffprobe_codec_name! !ffprobe_width!x!ffprobe_height!@!ffprobe_r_frame_rate_100!fps%cDEFAULT%
 			
 			
 			rem warn if the input video stream format suck
@@ -140,6 +169,7 @@ for /f "tokens=1* delims==" %%a in ('bin\ffprobe -v quiet -i !input_motion! -pri
 	)
 )
 
+Echo ####### CARALHO ########
 
 if "!duration_in_secs!"=="" (
 	
@@ -182,9 +212,9 @@ set /P output_motion=%sWhite%Output file name:%cdefault%
 
 rem empty field = random file name
 if "%output_motion%"=="" (
-set output_motion=4chan_%random%.webm
+set output_motion=!cdir!\4chan_%random%.webm
 )else (
-set output_motion=!output_motion!.webm
+set output_motion=!cdir!\!output_motion!.webm
 )
 
 
@@ -273,7 +303,7 @@ rem set ts_start_secs_cmdline=-ss !ts_start_secs!
 rem set duration_user_cmdline=-t !duration_user!
 
 rem ---------------------------------------------------
-rem doing the discord constraints stuff
+rem doing the 4chan constraints stuff
 
 
 set target_size_kb=3072
@@ -293,13 +323,13 @@ if !video_kbit! GTR 8000 set video_kbit=8000
 rem start with the original resolution, and then consider downsampling if
 rem the target bitrate is too low
 set max_x_res=!ffprobe_width!
-if !video_kbit! LSS 6000 set max_x_res=1440
-if !video_kbit! LSS 4000 set max_x_res=1280
-if !video_kbit! LSS 2000 set max_x_res=1024
-if !video_kbit! LSS 960 set max_x_res=800
-if !video_kbit! LSS 896 set max_x_res=720
-if !video_kbit! LSS 768 set max_x_res=640
-if !video_kbit! LSS 640 set max_x_res=480
+if !video_kbit! LSS 6000 if !max_x_res! GTR 1440 set max_x_res=1440
+if !video_kbit! LSS 4000 if !max_x_res! GTR 1280 set max_x_res=1280
+if !video_kbit! LSS 2000 if !max_x_res! GTR 1024 set max_x_res=1024
+if !video_kbit! LSS 960 if !max_x_res! GTR 800 set max_x_res=800
+if !video_kbit! LSS 896 if !max_x_res! GTR 720 set max_x_res=720
+if !video_kbit! LSS 768 if !max_x_res! GTR 640 set max_x_res=640
+if !video_kbit! LSS 640 if !max_x_res! GTR 480 set max_x_res=480
 rem really didnt felt inspired to put cool resolutions with the really low bitrate outputs,
 rem the result will be a blurry mess anyway
 
@@ -315,7 +345,7 @@ if !video_kbit! LSS 600 (
 
 
 echo.
-echo Attemping to encode the output with !video_kbit!k video bitrate.
+echo Attemping to encode the output with !video_kbit!k video bitrate, !audio_kbit!k audio bitrate.
 
 
 
@@ -326,11 +356,16 @@ if ERRORLEVEL 1 echo fatal ffmpeg error! && call :fatal_error_pause
 
 
 rem verificar o tamanho do arquivo de saida se tivemos sucesso ou falha
-for %%a in (!output_motion!) do set output_bytes=%%~za
+set output_bytes=99999999
+for %%a in ("!output_motion!") do set output_bytes=%%~za
 echo output size in bytes: !output_bytes!
+
+rem for %%a in ("!output_motion!") do echo set output_bytes=%%a %%~za
+rem pause
+
 if !output_bytes! GTR !target_size_bytes! (
 echo File exceeded target size with bitrate !video_kbit!k, trying again with a lower value
-del !output_motion! >NUL 2>NUL
+del "!output_motion!" >NUL 2>NUL
 echo.
 set /a video_kbit=!video_kbit! - 100
 goto try_again
@@ -390,6 +425,14 @@ echo %cUP1LINE%%cDEFAULT%%~1 %cCOLUMN%%cGREEN%[OK]
 set error_test_thing=0
 )
 goto :eof
+
+::================================================================
+:format_float
+set /a ff_a=%1 / 100
+set /a ff_b=%1 %% 100
+set ret_float=!ff_a!.!ff_b!
+goto :eof
+
 
 ::===================================================================
 :trim_zeroes

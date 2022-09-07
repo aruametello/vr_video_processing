@@ -575,7 +575,7 @@ if NOT "!scale_in:~0,3!"=="!scale_out:~0,3!" (
 
  set /a crop_scale_y = !scale_out! * !fp! / !scale_in!
  
- if !crop_scale_y! LSS !fp! (
+ if !crop_scale_y! LEQ !fp! (
    echo %sRED%ERROR:%sYellow% the input footage is less "tall" than the !aspect_ratio! requested aspect ratio.
    echo        its not possible to crop this video without ruining the horizontal FOV.
    echo        try with a wider aspect ratio or recapture the video using the full frame of STEAMVR.%cdefault%
